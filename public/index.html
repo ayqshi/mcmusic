@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎵 Minecraft C418-Style Sequencer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    h1 {
+      color: #4ecca3;
+      font-size: 1.8em;
+      margin-bottom: 5px;
+      text-shadow: 0 0 20px rgba(78, 204, 163, 0.3);
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 0.85em;
+      margin-bottom: 30px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
+      max-width: 800px;
+      width: 100%;
+      margin-bottom: 25px;
+    }
+
+    .control-group {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 15px;
+    }
+
+    .control-group label {
+      display: block;
+      color: #4ecca3;
+      font-size: 0.75em;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: inherit;
+      font-size: 0.9em;
+    }
+
+    select:focus, input:focus {
+      outline: none;
+      border-color: #4ecca3;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 25px;
+    }
+
+    button {
+      background: #4ecca3;
+      color: #1a1a2e;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 1em;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    button:hover {
+      background: #3bbb92;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(78, 204, 163, 0.3);
+    }
+
+    button:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    button.stop {
+      background: #e74c3c;
+      color: white;
+    }
+
+    button.stop:hover {
+      background: #c0392b;
+    }
+
+    .visualizer {
+      width: 100%;
+      max-width: 800px;
+      margin-bottom: 20px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 120px;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+    }
+
+    .status {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 15px 25px;
+      max-width: 800px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .status .phase {
+      color: #4ecca3;
+      font-size: 1.1em;
+      margin-bottom: 5px;
+    }
+
+    .status .info {
+      color: #666;
+      font-size: 0.8em;
+    }
+
+    .progress-bar {
+      width: 100%;
+      max-width: 800px;
+      height: 6px;
+      background: #16213e;
+      border-radius: 3px;
+      margin: 15px 0;
+      overflow: hidden;
+    }
+
+    .progress-bar .fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4ecca3, #3bbb92);
+      border-radius: 3px;
+      transition: width 0.3s;
+      width: 0%;
+    }
+
+    .sequencer-grid {
+      display: grid;
+      grid-template-columns: repeat(32, 1fr);
+      gap: 2px;
+      max-width: 800px;
+      width: 100%;
+      margin: 15px 0;
+    }
+
+    .step {
+      aspect-ratio: 1;
+      background: #16213e;
+      border-radius: 2px;
+      transition: background 0.1s;
+    }
+
+    .step.active {
+      background: #4ecca3;
+      box-shadow: 0 0 8px rgba(78, 204, 163, 0.5);
+    }
+
+    .step.beat {
+      background: #1e2a47;
+    }
+
+    .api-info {
+      max-width: 800px;
+      width: 100%;
+      margin-top: 30px;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .api-info h3 {
+      color: #4ecca3;
+      margin-bottom: 10px;
+    }
+
+    .api-info code {
+      background: #1a1a2e;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #e0e0e0;
+      font-size: 0.85em;
+    }
+
+    .api-info p {
+      margin: 8px 0;
+      font-size: 0.85em;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1>C418 Sequencer</h1>
+  <p class="subtitle">32-Step Procedural Minecraft Music Generator</p>
+
+  <div class="controls">
+    <div class="control-group">
+      <label>Key</label>
+      <select id="key">
+        <option value="C" selected>C</option>
+        <option value="D">D</option>
+        <option value="E">E</option>
+        <option value="F">F</option>
+        <option value="G">G</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Scale</label>
+      <select id="scale">
+        <option value="minor_pentatonic" selected>Minor Pentatonic</option>
+        <option value="dorian">Dorian</option>
+        <option value="aeolian">Aeolian</option>
+        <option value="mixolydian">Mixolydian</option>
+        <option value="lydian">Lydian</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>BPM</label>
+      <input type="number" id="bpm" value="95" min="60" max="140" step="5">
+    </div>
+    <div class="control-group">
+      <label>Seed</label>
+      <input type="number" id="seed" value="" placeholder="Random">
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button id="playBtn" onclick="generate()">Generate & Play</button>
+    <button id="stopBtn" class="stop" onclick="stopPlayback()" disabled>Stop</button>
+  </div>
+
+  <div class="sequencer-grid" id="grid"></div>
+
+  <div class="progress-bar">
+    <div class="fill" id="progress"></div>
+  </div>
+
+  <div class="visualizer">
+    <canvas id="waveform"></canvas>
+  </div>
+
+  <div class="status">
+    <div class="phase" id="phaseDisplay">Ready to generate</div>
+    <div class="info" id="infoDisplay">Choose your parameters and hit play</div>
+  </div>
+
+  <div class="api-info">
+    <h3>API Endpoint</h3>
+    <p>Stream audio directly: <code>GET /api/generate?key=C&scale=minor_pentatonic&bpm=95&seed=12345</code></p>
+    <p>Returns: <code>audio/wav</code> stream (~2 min, 44.1kHz, 16-bit stereo)</p>
+    <p>Info: <code>GET /api/info</code></p>
+  </div>
+
+  <script>
+    let audioCtx, source, analyser, currentAudio;
+    let animationId;
+
+    // Build sequencer grid
+    const grid = document.getElementById('grid');
+    for (let i = 0; i < 32; i++) {
+      const step = document.createElement('div');
+      step.className = 'step' + (i % 8 === 0 ? ' beat' : '');
+      step.id = `step-${i}`;
+      grid.appendChild(step);
+    }
+
+    async function generate() {
+      stopPlayback();
+
+      const key = document.getElementById('key').value;
+      const scale = document.getElementById('scale').value;
+      const bpm = document.getElementById('bpm').value;
+      const seedInput = document.getElementById('seed').value;
+      const seed = seedInput || Math.floor(Math.random() * 999999);
+
+      document.getElementById('seed').value = seed;
+      document.getElementById('playBtn').disabled = true;
+      document.getElementById('playBtn').textContent = 'Generating...';
+      document.getElementById('phaseDisplay').textContent = 'Generating...';
+
+      const url = `/api/generate?key=${key}&scale=${scale}&bpm=${bpm}&seed=${seed}`;
+
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+        source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        source.start(0);
+
+        document.getElementById('playBtn').disabled = false;
+        document.getElementById('playBtn').textContent = 'Generate New';
+        document.getElementById('stopBtn').disabled = false;
+
+        const duration = audioBuffer.duration;
+        const startTime = audioCtx.currentTime;
+        const bpmVal = parseInt(bpm);
+        const stepDuration = 60 / bpmVal / 8;
+
+        const sections = [
+          { t: 0, name: '✨ Intro' },
+          { t: 0.08, name: '🎹 Theme A' },
+          { t: 0.24, name: '🔨 Building...' },
+          { t: 0.40, name: '🌟 CLIMAX' },
+          { t: 0.62, name: '💫 Breakdown' },
+          { t: 0.70, name: '🔥 PEAK' },
+          { t: 0.87, name: '🌙 Outro' }
+        ];
+
+        function animate() {
+          const elapsed = audioCtx.currentTime - startTime;
+          const progress = Math.min(1, elapsed / duration);
+
+          document.getElementById('progress').style.width = (progress * 100) + '%';
+
+          // Update step grid
+          const currentStep = Math.floor((elapsed / stepDuration) % 32);
+          document.querySelectorAll('.step').forEach((el, i) => {
+            el.classList.toggle('active', i === currentStep);
+          });
+
+          // Update section display
+          let currentSection = sections[0];
+          for (const s of sections) {
+            if (progress >= s.t) currentSection = s;
+          }
+          document.getElementById('phaseDisplay').textContent = currentSection.name;
+          document.getElementById('infoDisplay').textContent =
+            `${elapsed.toFixed(1)}s / ${duration.toFixed(1)}s | Step ${currentStep + 1}/32 | Seed: ${seed}`;
+
+          // Draw waveform
+          const canvas = document.getElementById('waveform');
+          const ctx = canvas.getContext('2d');
+          canvas.width = canvas.offsetWidth * 2;
+          canvas.height = canvas.offsetHeight * 2;
+
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+          analyser.getByteTimeDomainData(dataArray);
+
+          ctx.fillStyle = '#16213e';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#4ecca3';
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#4ecca3';
+          ctx.beginPath();
+
+          const sliceWidth = canvas.width / bufferLength;
+          let x = 0;
+
+          for (let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i] / 128.0;
+            const y = (v * canvas.height) / 2;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+            x += sliceWidth;
+          }
+
+          ctx.lineTo(canvas.width, canvas.height / 2);
+          ctx.stroke();
+
+          if (progress < 1) {
+            animationId = requestAnimationFrame(animate);
+          } else {
+            document.getElementById('phaseDisplay').textContent = 'Complete';
+            document.getElementById('stopBtn').disabled = true;
+            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+          }
+        }
+
+        animate();
+
+        source.onended = () => {
+          document.getElementById('stopBtn').disabled = true;
+          document.getElementById('phaseDisplay').textContent = 'Complete';
+          cancelAnimationFrame(animationId);
+          document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+        };
+      } catch (err) {
+        console.error('Error:', err);
+        document.getElementById('phaseDisplay').textContent = 'Error: ' + err.message;
+        document.getElementById('playBtn').disabled = false;
+        document.getElementById('playBtn').textContent = 'Generate & Play';
+      }
+    }
+
+    function stopPlayback() {
+      if (source) {
+        try { source.stop(); } catch(e) {}
+        source = null;
+      }
+      if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+      }
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('progress').style.width = '0%';
+      document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+    }
+  </script>
+</body>
+</html>
