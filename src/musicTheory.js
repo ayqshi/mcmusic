@@ -166,3 +166,4 @@ class MusicTheory {
 }
 
 module.exports = { MusicTheory, SCALES, NOTE_FREQUENCIES };
+if (typeof window !== 'undefined') window.MusicTheoryModule = { MusicTheory, SCALES, NOTE_FREQUENCIES };
