@@ -261,3 +261,4 @@ class WavEncoder {
 }
 
 module.exports = { Oscillator, Envelope, Voices, WavEncoder };
+if (typeof window !== 'undefined') window.SynthesisModule = { Oscillator, Envelope, Voices, WavEncoder };
