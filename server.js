@@ -32,6 +32,24 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // Serve src/ scripts for browser preview mode
+if (url.pathname.startsWith('/src/')) {
+  const filePath = path.join(__dirname, url.pathname);
+  // Security: prevent directory traversal
+  if (!filePath.startsWith(path.join(__dirname, 'src'))) {
+    res.writeHead(403);
+    return res.end('Forbidden');
+  }
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(404);
+      return res.end('Not found');
+    }
+    res.writeHead(200, { 'Content-Type': 'application/javascript' });
+    res.end(data);
+  });
+  return;
+}
 
   if (url.pathname === '/api/generate') {
     const key = url.searchParams.get('key') || 'C';
