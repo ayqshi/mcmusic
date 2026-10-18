@@ -169,3 +169,4 @@ class PatternGenerator {
 }
 
 module.exports = { PatternGenerator };
+if (typeof window !== 'undefined') window.PatternsModule = { PatternGenerator };
