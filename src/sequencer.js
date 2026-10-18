@@ -1,9 +1,10 @@
 // Main sequencer - ties everything together
 
-const { MusicTheory } = require('./musicTheory');
-const { PatternGenerator } = require('./patterns');
-const { Voices } = require('./synthesis');
-const { Reverb, StereoDelay, EQ, Compressor, StereoWidener } = require('./effects');
+// Universal require - works in Node and browser
+const { MusicTheory } = (typeof require !== 'undefined') ? require('./musicTheory') : window.MusicTheoryModule;
+const { PatternGenerator } = (typeof require !== 'undefined') ? require('./patterns') : window.PatternsModule;
+const { Voices } = (typeof require !== 'undefined') ? require('./synthesis') : window.SynthesisModule;
+const { Reverb, StereoDelay, EQ, Compressor, StereoWidener } = (typeof require !== 'undefined') ? require('./effects') : window.EffectsModule;
 
 class Sequencer {
   constructor(config, songStructure) {
