@@ -28,8 +28,61 @@
     .subtitle {
       color: #888;
       font-size: 0.85em;
-      margin-bottom: 30px;
+      margin-bottom: 20px;
     }
+
+    .mode-switcher {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 25px;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 10px;
+      padding: 6px;
+    }
+
+    .mode-btn {
+      background: transparent;
+      color: #888;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.85em;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .mode-btn.active {
+      background: #4ecca3;
+      color: #1a1a2e;
+      font-weight: bold;
+    }
+
+    .mode-btn:hover:not(.active) {
+      color: #e0e0e0;
+    }
+
+    .mode-info {
+      font-size: 0.75em;
+      color: #666;
+      text-align: center;
+      margin-bottom: 20px;
+      max-width: 600px;
+    }
+
+    .mode-info .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.9em;
+      margin: 0 4px;
+    }
+
+    .badge.server { background: #0f3460; color: #4ecca3; }
+    .badge.browser { background: #4a2545; color: #e74c7c; }
 
     .controls {
       display: grid;
@@ -76,6 +129,8 @@
       display: flex;
       gap: 10px;
       margin-bottom: 25px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
     button {
@@ -93,7 +148,7 @@
       letter-spacing: 1px;
     }
 
-    button:hover {
+    button:hover:not(:disabled) {
       background: #3bbb92;
       transform: translateY(-1px);
       box-shadow: 0 4px 15px rgba(78, 204, 163, 0.3);
@@ -112,8 +167,17 @@
       color: white;
     }
 
-    button.stop:hover {
+    button.stop:hover:not(:disabled) {
       background: #c0392b;
+    }
+
+    button.download {
+      background: #0f3460;
+      color: #4ecca3;
+    }
+
+    button.download:hover:not(:disabled) {
+      background: #164082;
     }
 
     .visualizer {
@@ -169,6 +233,17 @@
       width: 0%;
     }
 
+    .progress-bar.generating .fill {
+      background: linear-gradient(90deg, #e74c7c, #4ecca3);
+      background-size: 200% 100%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
     .sequencer-grid {
       display: grid;
       grid-template-columns: repeat(32, 1fr);
@@ -222,11 +297,37 @@
       font-size: 0.85em;
       color: #aaa;
     }
+
+    .script-status {
+      font-size: 0.7em;
+      color: #666;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .script-status .ok { color: #4ecca3; }
+    .script-status .fail { color: #e74c3c; }
   </style>
 </head>
 <body>
-  <h1>C418 Sequencer</h1>
+  <h1>⛏️ C418 Sequencer</h1>
   <p class="subtitle">32-Step Procedural Minecraft Music Generator</p>
+
+  <!-- MODE SWITCHER AT TOP -->
+  <div class="mode-switcher">
+    <button class="mode-btn active" id="modeBrowserBtn" onclick="setMode('browser')">
+      🌐 Browser Preview
+    </button>
+    <button class="mode-btn" id="modeServerBtn" onclick="setMode('server')">
+      🖥️ Server API Stream
+    </button>
+  </div>
+
+  <div class="mode-info" id="modeInfo">
+    <span class="badge browser">BROWSER</span> Static preview — generates audio directly in your browser using the <code>src/</code> scripts. No server needed.
+  </div>
+
+  <div class="script-status" id="scriptStatus">Loading src/ modules...</div>
 
   <div class="controls">
     <div class="control-group">
@@ -262,13 +363,14 @@
   </div>
 
   <div class="btn-row">
-    <button id="playBtn" onclick="generate()">Generate & Play</button>
-    <button id="stopBtn" class="stop" onclick="stopPlayback()" disabled>Stop</button>
+    <button id="playBtn" onclick="generate()">▶ Generate & Play</button>
+    <button id="stopBtn" class="stop" onclick="stopPlayback()" disabled>■ Stop</button>
+    <button id="downloadBtn" class="download" onclick="downloadWav()" disabled>⬇ Download WAV</button>
   </div>
 
   <div class="sequencer-grid" id="grid"></div>
 
-  <div class="progress-bar">
+  <div class="progress-bar" id="progressBar">
     <div class="fill" id="progress"></div>
   </div>
 
@@ -278,21 +380,66 @@
 
   <div class="status">
     <div class="phase" id="phaseDisplay">Ready to generate</div>
-    <div class="info" id="infoDisplay">Choose your parameters and hit play</div>
+    <div class="info" id="infoDisplay">Choose parameters and hit play</div>
   </div>
 
   <div class="api-info">
-    <h3>API Endpoint</h3>
+    <h3>🔌 API Endpoint</h3>
     <p>Stream audio directly: <code>GET /api/generate?key=C&scale=minor_pentatonic&bpm=95&seed=12345</code></p>
     <p>Returns: <code>audio/wav</code> stream (~2 min, 44.1kHz, 16-bit stereo)</p>
     <p>Info: <code>GET /api/info</code></p>
+    <p style="margin-top:12px"><strong>Browser mode</strong> runs the exact same generation code as the server — great for testing without starting Node.</p>
   </div>
 
-  <script>
-    let audioCtx, source, analyser, currentAudio;
-    let animationId;
+  <!-- ========================================= -->
+  <!-- LINKED SRC/ SCRIPTS FOR BROWSER GENERATION -->
+  <!-- ========================================= -->
+  <script src="/src/musicTheory.js"></script>
+  <script src="/src/patterns.js"></script>
+  <script src="/src/synthesis.js"></script>
+  <script src="/src/effects.js"></script>
+  <script src="/src/songStructure.js"></script>
+  <script src="/src/sequencer.js"></script>
 
-    // Build sequencer grid
+  <script>
+    // ============ MODE STATE ============
+    let currentMode = 'browser';
+    let audioCtx, source, analyser, animationId;
+    let generatedBuffer = null; // for downloads
+
+    // ============ CHECK SCRIPTS LOADED ============
+    function checkScripts() {
+      const modules = {
+        'MusicTheory': window.MusicTheoryModule,
+        'Patterns': window.PatternsModule,
+        'Synthesis': window.SynthesisModule,
+        'Effects': window.EffectsModule,
+        'SongStructure': window.SongStructureModule,
+        'Sequencer': window.SequencerModule
+      };
+      const results = Object.entries(modules).map(([name, mod]) =>
+        mod ? `<span class="ok">✓ ${name}</span>` : `<span class="fail">✗ ${name}</span>`
+      );
+      document.getElementById('scriptStatus').innerHTML = results.join(' · ');
+      return Object.values(modules).every(m => m);
+    }
+
+    // ============ MODE SWITCHING ============
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('modeBrowserBtn').classList.toggle('active', mode === 'browser');
+      document.getElementById('modeServerBtn').classList.toggle('active', mode === 'server');
+
+      const info = document.getElementById('modeInfo');
+      if (mode === 'browser') {
+        info.innerHTML = '<span class="badge browser">BROWSER</span> Static preview — generates audio directly in your browser using the <code>src/</code> scripts. No server needed.';
+      } else {
+        info.innerHTML = '<span class="badge server">SERVER</span> Streams audio from the <code>/api/generate</code> endpoint via chunked HTTP response. Lower latency to first sound.';
+      }
+      stopPlayback();
+    }
+
+    // ============ SEQUENCER GRID ============
     const grid = document.getElementById('grid');
     for (let i = 0; i < 32; i++) {
       const step = document.createElement('div');
@@ -301,154 +448,307 @@
       grid.appendChild(step);
     }
 
+    // ============ GENERATE HANDLER ============
     async function generate() {
       stopPlayback();
 
+      const scriptsOk = checkScripts();
+      if (currentMode === 'browser' && !scriptsOk) {
+        setStatus('❌ Error', 'Some src/ modules failed to load. Open browser console (F12) for details.');
+        return;
+      }
+
       const key = document.getElementById('key').value;
       const scale = document.getElementById('scale').value;
-      const bpm = document.getElementById('bpm').value;
+      const bpm = parseInt(document.getElementById('bpm').value);
       const seedInput = document.getElementById('seed').value;
-      const seed = seedInput || Math.floor(Math.random() * 999999);
+      const seed = parseInt(seedInput) || Math.floor(Math.random() * 999999);
 
       document.getElementById('seed').value = seed;
       document.getElementById('playBtn').disabled = true;
-      document.getElementById('playBtn').textContent = 'Generating...';
-      document.getElementById('phaseDisplay').textContent = 'Generating...';
+      document.getElementById('downloadBtn').disabled = true;
+
+      if (currentMode === 'browser') {
+        await generateBrowser({ key, scale, bpm, seed });
+      } else {
+        await generateServer({ key, scale, bpm, seed });
+      }
+    }
+
+    // ============ BROWSER GENERATION ============
+    async function generateBrowser({ key, scale, bpm, seed }) {
+      document.getElementById('playBtn').textContent = '⏳ Generating...';
+      document.getElementById('progressBar').classList.add('generating');
+      setStatus('Generating in browser...', `Key: ${key} ${scale} | BPM: ${bpm} | Seed: ${seed}`);
+
+      try {
+        // Grab modules from window (loaded via <script> tags)
+        const { SongStructure } = window.SongStructureModule;
+        const { Sequencer } = window.SequencerModule;
+
+        const sampleRate = 44100;
+        const duration = 120;
+        const totalSamples = sampleRate * duration;
+
+        const structure = new SongStructure(bpm, duration, seed);
+        const sequencer = new Sequencer({ key, scale, bpm, seed }, structure);
+        // Browser doesn't have Node.js Buffer, so sequencer must work with raw Float64 math only.
+        // Our Sequencer.getSample() returns [l, r] floats — perfect.
+
+        // Allocate output buffer
+        const audioBuffer = new AudioBuffer({
+          length: totalSamples,
+          numberOfChannels: 2,
+          sampleRate: sampleRate
+        });
+        const leftData = audioBuffer.getChannelData(0);
+        const rightData = audioBuffer.getChannelData(1);
+
+        // Generate in chunks with yielding to keep UI responsive
+        const chunkSize = sampleRate; // 1 sec per chunk
+        let samplesWritten = 0;
+
+        while (samplesWritten < totalSamples) {
+          const end = Math.min(samplesWritten + chunkSize, totalSamples);
+          for (let i = samplesWritten; i < end; i++) {
+            const t = i / sampleRate;
+            const [l, r] = sequencer.getSample(t);
+            leftData[i] = Math.max(-1, Math.min(1, l));
+            rightData[i] = Math.max(-1, Math.min(1, r));
+          }
+          samplesWritten = end;
+
+          const progress = samplesWritten / totalSamples;
+          document.getElementById('progress').style.width = (progress * 100) + '%';
+          setStatus(
+            `Generating... ${Math.round(progress * 100)}%`,
+            `${(samplesWritten / sampleRate).toFixed(1)}s / ${duration}s rendered`
+          );
+
+          // Yield to the browser
+          await new Promise(r => setTimeout(r, 0));
+        }
+
+        document.getElementById('progressBar').classList.remove('generating');
+        generatedBuffer = audioBuffer;
+        document.getElementById('downloadBtn').disabled = false;
+
+        await playBuffer(audioBuffer, bpm, seed);
+      } catch (err) {
+        console.error(err);
+        setStatus('❌ Generation Error', err.message);
+        document.getElementById('playBtn').disabled = false;
+        document.getElementById('playBtn').textContent = '▶ Generate & Play';
+        document.getElementById('progressBar').classList.remove('generating');
+      }
+    }
+
+    // ============ SERVER GENERATION ============
+    async function generateServer({ key, scale, bpm, seed }) {
+      document.getElementById('playBtn').textContent = '⏳ Streaming...';
+      setStatus('Fetching from /api/generate...', `Key: ${key} ${scale} | BPM: ${bpm} | Seed: ${seed}`);
 
       const url = `/api/generate?key=${key}&scale=${scale}&bpm=${bpm}&seed=${seed}`;
 
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
         const response = await fetch(url);
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
         const arrayBuffer = await response.arrayBuffer();
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-        source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-
-        source.connect(analyser);
-        analyser.connect(audioCtx.destination);
-
-        source.start(0);
-
-        document.getElementById('playBtn').disabled = false;
-        document.getElementById('playBtn').textContent = 'Generate New';
-        document.getElementById('stopBtn').disabled = false;
-
-        const duration = audioBuffer.duration;
-        const startTime = audioCtx.currentTime;
-        const bpmVal = parseInt(bpm);
-        const stepDuration = 60 / bpmVal / 8;
-
-        const sections = [
-          { t: 0, name: '✨ Intro' },
-          { t: 0.08, name: '🎹 Theme A' },
-          { t: 0.24, name: '🔨 Building...' },
-          { t: 0.40, name: '🌟 CLIMAX' },
-          { t: 0.62, name: '💫 Breakdown' },
-          { t: 0.70, name: '🔥 PEAK' },
-          { t: 0.87, name: '🌙 Outro' }
-        ];
-
-        function animate() {
-          const elapsed = audioCtx.currentTime - startTime;
-          const progress = Math.min(1, elapsed / duration);
-
-          document.getElementById('progress').style.width = (progress * 100) + '%';
-
-          // Update step grid
-          const currentStep = Math.floor((elapsed / stepDuration) % 32);
-          document.querySelectorAll('.step').forEach((el, i) => {
-            el.classList.toggle('active', i === currentStep);
-          });
-
-          // Update section display
-          let currentSection = sections[0];
-          for (const s of sections) {
-            if (progress >= s.t) currentSection = s;
-          }
-          document.getElementById('phaseDisplay').textContent = currentSection.name;
-          document.getElementById('infoDisplay').textContent =
-            `${elapsed.toFixed(1)}s / ${duration.toFixed(1)}s | Step ${currentStep + 1}/32 | Seed: ${seed}`;
-
-          // Draw waveform
-          const canvas = document.getElementById('waveform');
-          const ctx = canvas.getContext('2d');
-          canvas.width = canvas.offsetWidth * 2;
-          canvas.height = canvas.offsetHeight * 2;
-
-          const bufferLength = analyser.frequencyBinCount;
-          const dataArray = new Uint8Array(bufferLength);
-          analyser.getByteTimeDomainData(dataArray);
-
-          ctx.fillStyle = '#16213e';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = '#4ecca3';
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = '#4ecca3';
-          ctx.beginPath();
-
-          const sliceWidth = canvas.width / bufferLength;
-          let x = 0;
-
-          for (let i = 0; i < bufferLength; i++) {
-            const v = dataArray[i] / 128.0;
-            const y = (v * canvas.height) / 2;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-            x += sliceWidth;
-          }
-
-          ctx.lineTo(canvas.width, canvas.height / 2);
-          ctx.stroke();
-
-          if (progress < 1) {
-            animationId = requestAnimationFrame(animate);
-          } else {
-            document.getElementById('phaseDisplay').textContent = 'Complete';
-            document.getElementById('stopBtn').disabled = true;
-            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
-          }
-        }
-
-        animate();
-
-        source.onended = () => {
-          document.getElementById('stopBtn').disabled = true;
-          document.getElementById('phaseDisplay').textContent = 'Complete';
-          cancelAnimationFrame(animationId);
-          document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
-        };
+        generatedBuffer = audioBuffer;
+        document.getElementById('downloadBtn').disabled = false;
+        await playBuffer(audioBuffer, bpm, seed);
       } catch (err) {
-        console.error('Error:', err);
-        document.getElementById('phaseDisplay').textContent = 'Error: ' + err.message;
+        console.error(err);
+        setStatus('❌ Server Error', err.message + ' — Is the Node server running?');
         document.getElementById('playBtn').disabled = false;
-        document.getElementById('playBtn').textContent = 'Generate & Play';
+        document.getElementById('playBtn').textContent = '▶ Generate & Play';
       }
     }
 
+    // ============ PLAYBACK ============
+    async function playBuffer(audioBuffer, bpm, seed) {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+      source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+
+      source.connect(analyser);
+      analyser.connect(audioCtx.destination);
+      source.start(0);
+
+      document.getElementById('playBtn').disabled = false;
+      document.getElementById('playBtn').textContent = '▶ Generate New';
+      document.getElementById('stopBtn').disabled = false;
+
+      const duration = audioBuffer.duration;
+      const startTime = audioCtx.currentTime;
+      const stepDuration = 60 / bpm / 8;
+
+      const sections = [
+        { t: 0, name: '✨ Intro' },
+        { t: 0.08, name: '🎹 Theme A' },
+        { t: 0.24, name: '🔨 Building...' },
+        { t: 0.40, name: '🌟 CLIMAX' },
+        { t: 0.62, name: '💫 Breakdown' },
+        { t: 0.70, name: '🔥 PEAK' },
+        { t: 0.87, name: '🌙 Outro' }
+      ];
+
+      function animate() {
+        const elapsed = audioCtx.currentTime - startTime;
+        const progress = Math.min(1, elapsed / duration);
+
+        document.getElementById('progress').style.width = (progress * 100) + '%';
+
+        const currentStep = Math.floor((elapsed / stepDuration) % 32);
+        document.querySelectorAll('.step').forEach((el, i) => {
+          el.classList.toggle('active', i === currentStep);
+        });
+
+        let currentSection = sections[0];
+        for (const s of sections) {
+          if (progress >= s.t) currentSection = s;
+        }
+        setStatus(
+          currentSection.name,
+          `${elapsed.toFixed(1)}s / ${duration.toFixed(1)}s | Step ${currentStep + 1}/32 | Seed: ${seed}`
+        );
+
+        drawWaveform();
+
+        if (progress < 1) {
+          animationId = requestAnimationFrame(animate);
+        } else {
+          setStatus('✅ Complete', `Seed: ${seed}`);
+          document.getElementById('stopBtn').disabled = true;
+          document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+        }
+      }
+
+      animate();
+
+      source.onended = () => {
+        document.getElementById('stopBtn').disabled = true;
+        setStatus('✅ Complete', `Seed: ${seed}`);
+        cancelAnimationFrame(animationId);
+        document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+      };
+    }
+
+    // ============ WAVEFORM DRAWING ============
+    function drawWaveform() {
+      const canvas = document.getElementById('waveform');
+      const ctx = canvas.getContext('2d');
+      canvas.width = canvas.offsetWidth * 2;
+      canvas.height = canvas.offsetHeight * 2;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteTimeDomainData(dataArray);
+
+      ctx.fillStyle = '#16213e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#4ecca3';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#4ecca3';
+      ctx.beginPath();
+
+      const sliceWidth = canvas.width / bufferLength;
+      let x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    }
+
+    // ============ STOP ============
     function stopPlayback() {
       if (source) {
-        try { source.stop(); } catch(e) {}
+        try { source.stop(); } catch (e) {}
         source = null;
       }
-      if (audioCtx) {
-        audioCtx.close();
-        audioCtx = null;
-      }
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
+      if (animationId) cancelAnimationFrame(animationId);
       document.getElementById('stopBtn').disabled = true;
       document.getElementById('progress').style.width = '0%';
       document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
     }
+
+    // ============ DOWNLOAD ============
+    function downloadWav() {
+      if (!generatedBuffer) return;
+      const wavBlob = audioBufferToWav(generatedBuffer);
+      const url = URL.createObjectURL(wavBlob);
+      const seed = document.getElementById('seed').value;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `c418_${seed}.wav`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function audioBufferToWav(buffer) {
+      const numChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const length = buffer.length * numChannels * 2 + 44;
+      const arrayBuffer = new ArrayBuffer(length);
+      const view = new DataView(arrayBuffer);
+
+      const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+
+      writeStr(0, 'RIFF');
+      view.setUint32(4, length - 8, true);
+      writeStr(8, 'WAVE');
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * 2, true);
+      view.setUint16(32, numChannels * 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, 'data');
+      view.setUint32(40, length - 44, true);
+
+      let offset = 44;
+      const channels = [];
+      for (let i = 0; i < numChannels; i++) channels.push(buffer.getChannelData(i));
+
+      for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+          const s = Math.max(-1, Math.min(1, channels[ch][i]));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+          offset += 2;
+        }
+      }
+      return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
+
+    // ============ UI HELPERS ============
+    function setStatus(phase, info) {
+      document.getElementById('phaseDisplay').textContent = phase;
+      document.getElementById('infoDisplay').textContent = info;
+    }
+
+    // ============ INIT ============
+    window.addEventListener('load', () => {
+      checkScripts();
+    });
   </script>
 </body>
 </html>
