@@ -350,3 +350,4 @@ class Sequencer {
 }
 
 module.exports = { Sequencer };
+if (typeof window !== 'undefined') window.SequencerModule = { Sequencer };
